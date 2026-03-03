@@ -23,7 +23,7 @@ NovaRaid/
   backend/      # FastAPI
   frontend/     # React (Vite)
 
-## Como rodar localmente
+## Como rodar localmente (exemplo)
 
 ### 1 Backend (FastAPI)
 Abra um terminal:
