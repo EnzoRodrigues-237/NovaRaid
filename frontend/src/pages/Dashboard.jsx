@@ -21,6 +21,11 @@ export default function Dashboard() {
   const [newChampName, setNewChampName] = useState("");
   const [champError, setChampError] = useState("");
 
+  const [teams, setTeams] = useState([]);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamType, setNewTeamType] = useState("common"); 
+  const [teamError, setTeamError] = useState("");
+
   useEffect(() => {
     fetch(`${API_BASE_URL}/health`)
       .then((r) => r.json())
@@ -33,9 +38,12 @@ export default function Dashboard() {
       .catch(() => setApi({ name: "NovaRaid API", version: "erro" }));
 
     loadChampionships();
+    loadTeams();
 
     const token = getToken();
-    if (token) fetchMe(token);
+    if (token) {
+      fetchMe(token);
+    }
   }, []);
 
   function flashMessage(msg) {
@@ -56,6 +64,60 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => setChampionships(data))
       .catch(() => setChampionships([]));
+  }
+
+  function loadTeams() {
+    const token = getToken();
+    if (!token) {
+      setTeams([]);
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/teams`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error("generic");
+        return r.json();
+      })
+      .then((data) => setTeams(data))
+      .catch(() => setTeams([]));
+  }
+
+  function handleCreateTeam(e) {
+    e.preventDefault();
+    setTeamError("");
+
+    const name = newTeamName.trim();
+    if (!name) {
+      setTeamError("Digite um nome para o time.");
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      setTeamError("Você precisa estar logado.");
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/teams`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name, team_type: newTeamType }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error("generic");
+        return r.json();
+      })
+      .then(() => {
+        setNewTeamName("");
+        setNewTeamType("common");
+        loadTeams();
+      })
+      .catch(() => setTeamError("Erro ao criar time."));
   }
 
   function fetchMe(token) {
@@ -88,7 +150,9 @@ export default function Dashboard() {
 
     const data = await res.json();
     saveToken(data.access_token);
+
     fetchMe(data.access_token);
+    loadTeams();
   }
 
   async function handleAuthSubmit(e) {
@@ -124,6 +188,7 @@ export default function Dashboard() {
   function handleLogout() {
     clearToken();
     setMe(null);
+    setTeams([]);
   }
 
   function handleCreateChampionship(e) {
@@ -464,6 +529,68 @@ export default function Dashboard() {
             </li>
           ))}
         </ul>
+      )}
+
+      <hr style={{ margin: "16px 0" }} />
+
+      <h2>Times</h2>
+
+      {me ? (
+        <>
+          <form
+            onSubmit={handleCreateTeam}
+            style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}
+          >
+            <input
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
+              placeholder="Nome do time"
+              style={{ padding: 8, width: 280 }}
+            />
+
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              Tipo:
+              <select
+                value={newTeamType}
+                onChange={(e) => setNewTeamType(e.target.value)}
+                style={{ padding: 8 }}
+              >
+                <option value="common">Comum</option>
+                <option value="university">Universitário</option>
+                <option value="professional">Profissional</option>
+              </select>
+            </label>
+
+            <button type="submit" style={{ padding: "8px 12px" }}>
+              Criar time
+            </button>
+
+            <button type="button" onClick={loadTeams} style={{ padding: "8px 12px" }}>
+              Atualizar
+            </button>
+          </form>
+
+          {teamError && <p style={{ marginTop: 0 }}>{teamError}</p>}
+
+          {teams.length === 0 ? (
+            <p>Nenhum time cadastrado.</p>
+          ) : (
+            <ul>
+              {teams.map((t) => (
+                <li key={t.id}>
+                  <b>{t.name}</b> —{" "}
+                  {t.team_type === "university"
+                    ? "Universitário"
+                    : t.team_type === "professional"
+                    ? "Profissional"
+                    : "Comum"}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <p>Faça login para gerenciar times.</p>
       )}
     </div>
   );

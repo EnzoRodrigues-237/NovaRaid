@@ -33,13 +33,18 @@ CHAMPIONSHIPS = [
     {"id": 2, "name": "UEPB Campus V Open", "status": "published"},
 ]
 
+TEAMS = []  # {id, name, team_type}
 USERS = []  # {id, name, email, password_hash}
-
 
 # ===== Schemas =====
 class ChampionshipCreate(BaseModel):
     name: str
     status: str = "draft"
+
+
+class TeamCreate(BaseModel):
+    name: str
+    team_type: str = "common"  # common | university | professional
 
 
 class UserCreate(BaseModel):
@@ -113,6 +118,7 @@ def version():
 def list_championships():
     return CHAMPIONSHIPS
 
+
 @app.get("/championships/{championship_id}")
 def get_championship(championship_id: int):
     for c in CHAMPIONSHIPS:
@@ -120,9 +126,11 @@ def get_championship(championship_id: int):
             return c
     raise HTTPException(status_code=404, detail="Campeonato não encontrado")
 
+
 @app.get("/public/championships")
 def public_championships():
     return [c for c in CHAMPIONSHIPS if c["status"] == "published"]
+
 
 @app.get("/public/championships/{championship_id}")
 def public_championship_detail(championship_id: int):
@@ -131,12 +139,14 @@ def public_championship_detail(championship_id: int):
             return c
     raise HTTPException(status_code=404, detail="Campeonato não encontrado")
 
+
 @app.post("/championships", status_code=201)
 def create_championship(payload: ChampionshipCreate, current_user=Depends(get_current_user)):
     new_id = max([c["id"] for c in CHAMPIONSHIPS], default=0) + 1
     item = {"id": new_id, "name": payload.name, "status": payload.status}
     CHAMPIONSHIPS.append(item)
     return item
+
 
 @app.patch("/championships/{championship_id}/publish")
 def publish_championship(championship_id: int, current_user=Depends(get_current_user)):
@@ -146,6 +156,7 @@ def publish_championship(championship_id: int, current_user=Depends(get_current_
             return c
     raise HTTPException(status_code=404, detail="Campeonato não encontrado")
 
+
 @app.patch("/championships/{championship_id}/unpublish")
 def unpublish_championship(championship_id: int, current_user=Depends(get_current_user)):
     for c in CHAMPIONSHIPS:
@@ -154,6 +165,7 @@ def unpublish_championship(championship_id: int, current_user=Depends(get_curren
             return c
     raise HTTPException(status_code=404, detail="Campeonato não encontrado")
 
+
 @app.delete("/championships/{championship_id}", status_code=204)
 def delete_championship(championship_id: int, current_user=Depends(get_current_user)):
     for i, c in enumerate(CHAMPIONSHIPS):
@@ -161,6 +173,25 @@ def delete_championship(championship_id: int, current_user=Depends(get_current_u
             CHAMPIONSHIPS.pop(i)
             return
     raise HTTPException(status_code=404, detail="Campeonato não encontrado")
+
+
+# ===== Times =====
+@app.get("/teams")
+def list_teams(current_user=Depends(get_current_user)):
+    return TEAMS
+
+
+@app.post("/teams", status_code=201)
+def create_team(payload: TeamCreate, current_user=Depends(get_current_user)):
+    allowed = {"common", "university", "professional"}
+    if payload.team_type not in allowed:
+        raise HTTPException(status_code=400, detail="team_type inválido")
+
+    new_id = max([t["id"] for t in TEAMS], default=0) + 1
+    team = {"id": new_id, "name": payload.name, "team_type": payload.team_type}
+    TEAMS.append(team)
+    return team
+
 
 # ===== Auth =====
 @app.post("/auth/register", response_model=UserPublic, status_code=201)
@@ -182,7 +213,6 @@ def register(payload: UserCreate):
 
 @app.post("/auth/login", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    # OAuth2PasswordRequestForm usa "username" e "password"
     user = find_user_by_email(form_data.username)
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(
