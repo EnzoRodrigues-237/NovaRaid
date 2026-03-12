@@ -36,6 +36,7 @@ CHAMPIONSHIPS = [
 TEAMS = []  # {id, name, team_type}
 USERS = []  # {id, name, email, password_hash}
 TEAM_MEMBERS = []  # {id, team_id, name, nick, game_id}
+REGISTRATIONS = [] # {id, championship_id, team_id, status}
 
 # ===== Schemas =====
 class ChampionshipCreate(BaseModel):
@@ -50,6 +51,9 @@ class TeamMemberCreate(BaseModel):
     name: str
     nick: str
     game_id: str
+
+class RegistrationCreate(BaseModel):
+    team_id:int
 
 class UserCreate(BaseModel):
     name: str
@@ -184,6 +188,12 @@ def delete_championship(championship_id: int, current_user=Depends(get_current_u
 def list_teams(current_user=Depends(get_current_user)):
     return TEAMS
 
+@app.get("/teams/{team_id}")
+def get_team(team_id: int, current_user=Depends(get_current_user)):
+    for t in TEAMS:
+        if t["id"] == team_id:
+            return t
+    raise HTTPException(status_code=404, detail="Time não encontrado")
 
 @app.post("/teams", status_code=201)
 def create_team(payload: TeamCreate, current_user=Depends(get_current_user)):
@@ -239,6 +249,50 @@ def remove_team_member(team_id: int, member_id: int, current_user=Depends(get_cu
             return
 
     raise HTTPException(status_code=404, detail="Membro não encontrado")
+
+# ===== Inscrições em Campeonatos =====
+@app.get("/championships/{championship_id}/registrations")
+def list_registrations(championship_id: int, current_user=Depends(get_current_user)):
+    championship_exists = any(c["id"] == championship_id for c in CHAMPIONSHIPS)
+    if not championship_exists:
+        raise HTTPException(status_code=404, detail="Campeonato não encontrado")
+
+    return [r for r in REGISTRATIONS if r["championship_id"] == championship_id]
+
+
+@app.post("/championships/{championship_id}/registrations", status_code=201)
+def create_registration(
+    championship_id: int,
+    payload: RegistrationCreate,
+    current_user=Depends(get_current_user),
+):
+    championship = next((c for c in CHAMPIONSHIPS if c["id"] == championship_id), None)
+    if not championship:
+        raise HTTPException(status_code=404, detail="Campeonato não encontrado")
+
+    team = next((t for t in TEAMS if t["id"] == payload.team_id), None)
+    if not team:
+        raise HTTPException(status_code=404, detail="Time não encontrado")
+
+    existing = next(
+        (
+            r for r in REGISTRATIONS
+            if r["championship_id"] == championship_id and r["team_id"] == payload.team_id
+        ),
+        None,
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Time já inscrito neste campeonato")
+
+    new_id = max([r["id"] for r in REGISTRATIONS], default=0) + 1
+    registration = {
+        "id": new_id,
+        "championship_id": championship_id,
+        "team_id": payload.team_id,
+        "status": "pending",
+    }
+    REGISTRATIONS.append(registration)
+    return registration
 
 # ===== Auth =====
 @app.post("/auth/register", response_model=UserPublic, status_code=201)

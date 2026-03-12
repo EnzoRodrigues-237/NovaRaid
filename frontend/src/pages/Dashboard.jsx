@@ -26,7 +26,7 @@ export default function Dashboard() {
   // Teams
   const [teams, setTeams] = useState([]);
   const [newTeamName, setNewTeamName] = useState("");
-  const [newTeamType, setNewTeamType] = useState("common"); // common | university | professional
+  const [newTeamType, setNewTeamType] = useState("common");
   const [teamError, setTeamError] = useState("");
 
   // Team Members (Roster)
@@ -36,6 +36,12 @@ export default function Dashboard() {
   const [memberNick, setMemberNick] = useState("");
   const [memberGameId, setMemberGameId] = useState("");
   const [memberError, setMemberError] = useState("");
+
+  // Registrations
+  const [selectedChampionshipId, setSelectedChampionshipId] = useState("");
+  const [registrations, setRegistrations] = useState([]);
+  const [registrationTeamId, setRegistrationTeamId] = useState("");
+  const [registrationError, setRegistrationError] = useState("");
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/health`)
@@ -53,7 +59,7 @@ export default function Dashboard() {
     const token = getToken();
     if (token) {
       fetchMe(token);
-      loadTeams(); // só faz sentido logado
+      loadTeams();
     } else {
       setTeams([]);
     }
@@ -247,11 +253,11 @@ export default function Dashboard() {
     saveToken(data.access_token);
 
     fetchMe(data.access_token);
-
-    // ao logar, carrega times e limpa seleção de elenco
     loadTeams();
     setSelectedTeamId("");
     setMembers([]);
+    setSelectedChampionshipId("");
+    setRegistrations([]);
   }
 
   async function handleAuthSubmit(e) {
@@ -290,6 +296,8 @@ export default function Dashboard() {
     setTeams([]);
     setSelectedTeamId("");
     setMembers([]);
+    setSelectedChampionshipId("");
+    setRegistrations([]);
   }
 
   // ===== Teams =====
@@ -336,7 +344,6 @@ export default function Dashboard() {
       return;
     }
 
-    // aviso simples (MVP) conforme você pediu
     if (newTeamType === "university") {
       alert(
         "Aviso: Times universitários devem ser verídicos. Caso não sejam, podem ser removidos."
@@ -488,6 +495,88 @@ export default function Dashboard() {
           return;
         }
         setMemberError("Erro ao remover membro.");
+      });
+  }
+
+  // ===== Registrations =====
+  function loadRegistrations(championshipId) {
+    const token = getToken();
+    if (!token || !championshipId) {
+      setRegistrations([]);
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/championships/${championshipId}/registrations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (r) => {
+        if (r.status === 401) throw new Error("unauthorized");
+        if (!r.ok) throw new Error("generic");
+        return r.json();
+      })
+      .then((data) => setRegistrations(data))
+      .catch((err) => {
+        if (err.message === "unauthorized") {
+          clearToken();
+          setMe(null);
+          setRegistrations([]);
+          setRegistrationError("Sua sessão expirou. Faça login novamente.");
+          return;
+        }
+        setRegistrations([]);
+      });
+  }
+
+  function handleCreateRegistration(e) {
+    e.preventDefault();
+    setRegistrationError("");
+
+    const token = getToken();
+    if (!token) {
+      setRegistrationError("Você precisa estar logado.");
+      return;
+    }
+    if (!selectedChampionshipId) {
+      setRegistrationError("Selecione um campeonato.");
+      return;
+    }
+    if (!registrationTeamId) {
+      setRegistrationError("Selecione um time.");
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/championships/${selectedChampionshipId}/registrations`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ team_id: Number(registrationTeamId) }),
+    })
+      .then(async (r) => {
+        if (r.status === 401) throw new Error("unauthorized");
+        if (!r.ok) {
+          const err = await r.json().catch(() => null);
+          throw new Error(err?.detail || "generic");
+        }
+        return r.json();
+      })
+      .then(() => {
+        setRegistrationTeamId("");
+        loadRegistrations(selectedChampionshipId);
+      })
+      .catch((err) => {
+        if (err.message === "unauthorized") {
+          clearToken();
+          setMe(null);
+          setRegistrationError("Sua sessão expirou. Faça login novamente.");
+          return;
+        }
+        if (err.message === "Time já inscrito neste campeonato") {
+          setRegistrationError("Esse time já está inscrito neste campeonato.");
+          return;
+        }
+        setRegistrationError("Erro ao criar inscrição.");
       });
   }
 
@@ -749,19 +838,26 @@ export default function Dashboard() {
           ) : (
             <ul>
               {teams.map((t) => (
-                <li key={t.id}>
+                <li key={t.id} style={{ marginBottom: 6 }}>
                   <b>{t.name}</b> —{" "}
                   {t.team_type === "university"
                     ? "Universitário"
                     : t.team_type === "professional"
                     ? "Profissional"
                     : "Comum"}
+
+                  <button
+                    onClick={() => navigate(`/teams/${t.id}`)}
+                    style={{ marginLeft: 10, padding: "4px 8px" }}
+                    type="button"
+                  >
+                    Ver perfil
+                  </button>
                 </li>
               ))}
             </ul>
           )}
 
-          {/* ===== Elenco do time (MVP) ===== */}
           <hr style={{ margin: "16px 0" }} />
           <h3>Elenco do time</h3>
 
@@ -842,6 +938,86 @@ export default function Dashboard() {
                       </button>
                     </li>
                   ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          <hr style={{ margin: "16px 0" }} />
+          <h3>Inscrições em campeonatos</h3>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label>Campeonato:</label>
+            <select
+              value={selectedChampionshipId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedChampionshipId(id);
+                loadRegistrations(id);
+              }}
+              style={{ padding: 6 }}
+            >
+              <option value="">Selecione...</option>
+              {championships.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.status})
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => loadRegistrations(selectedChampionshipId)}
+              style={{ padding: "6px 10px" }}
+              disabled={!selectedChampionshipId}
+            >
+              Atualizar inscrições
+            </button>
+          </div>
+
+          <form
+            onSubmit={handleCreateRegistration}
+            style={{ marginTop: 10, display: "grid", gap: 8, maxWidth: 360 }}
+          >
+            <select
+              value={registrationTeamId}
+              onChange={(e) => setRegistrationTeamId(e.target.value)}
+              style={{ padding: 8 }}
+            >
+              <option value="">Selecione um time...</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.team_type})
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="submit"
+              style={{ padding: "8px 12px" }}
+              disabled={!selectedChampionshipId || !registrationTeamId}
+            >
+              Inscrever time
+            </button>
+          </form>
+
+          {registrationError && <p style={{ marginTop: 8 }}>{registrationError}</p>}
+
+          {selectedChampionshipId && (
+            <>
+              <h4 style={{ marginTop: 12 }}>Inscrições</h4>
+              {registrations.length === 0 ? (
+                <p>Nenhuma inscrição nesse campeonato.</p>
+              ) : (
+                <ul>
+                  {registrations.map((r) => {
+                    const team = teams.find((t) => t.id === r.team_id);
+                    return (
+                      <li key={r.id} style={{ marginBottom: 6 }}>
+                        <b>{team ? team.name : `Time #${r.team_id}`}</b> — {r.status}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </>
