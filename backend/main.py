@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel,  EmailStr
 
 app = FastAPI(title="NovaRaid API")
 
@@ -35,17 +35,21 @@ CHAMPIONSHIPS = [
 
 TEAMS = []  # {id, name, team_type}
 USERS = []  # {id, name, email, password_hash}
+TEAM_MEMBERS = []  # {id, team_id, name, nick, game_id}
 
 # ===== Schemas =====
 class ChampionshipCreate(BaseModel):
     name: str
     status: str = "draft"
 
-
 class TeamCreate(BaseModel):
     name: str
     team_type: str = "common"  # common | university | professional
 
+class TeamMemberCreate(BaseModel):
+    name: str
+    nick: str
+    game_id: str
 
 class UserCreate(BaseModel):
     name: str
@@ -192,6 +196,49 @@ def create_team(payload: TeamCreate, current_user=Depends(get_current_user)):
     TEAMS.append(team)
     return team
 
+# ===== Membros do Time =====
+@app.get("/teams/{team_id}/members")
+def list_team_members(team_id: int, current_user=Depends(get_current_user)):
+    # valida se o time existe
+    team_exists = any(t["id"] == team_id for t in TEAMS)
+    if not team_exists:
+        raise HTTPException(status_code=404, detail="Time não encontrado")
+
+    return [m for m in TEAM_MEMBERS if m["team_id"] == team_id]
+
+
+@app.post("/teams/{team_id}/members", status_code=201)
+def add_team_member(team_id: int, payload: TeamMemberCreate, current_user=Depends(get_current_user)):
+    # valida se o time existe
+    team_exists = any(t["id"] == team_id for t in TEAMS)
+    if not team_exists:
+        raise HTTPException(status_code=404, detail="Time não encontrado")
+
+    new_id = max([m["id"] for m in TEAM_MEMBERS], default=0) + 1
+    member = {
+        "id": new_id,
+        "team_id": team_id,
+        "name": payload.name,
+        "nick": payload.nick,
+        "game_id": payload.game_id,
+    }
+    TEAM_MEMBERS.append(member)
+    return member
+
+
+@app.delete("/teams/{team_id}/members/{member_id}", status_code=204)
+def remove_team_member(team_id: int, member_id: int, current_user=Depends(get_current_user)):
+    # valida se o time existe
+    team_exists = any(t["id"] == team_id for t in TEAMS)
+    if not team_exists:
+        raise HTTPException(status_code=404, detail="Time não encontrado")
+
+    for i, m in enumerate(TEAM_MEMBERS):
+        if m["id"] == member_id and m["team_id"] == team_id:
+            TEAM_MEMBERS.pop(i)
+            return
+
+    raise HTTPException(status_code=404, detail="Membro não encontrado")
 
 # ===== Auth =====
 @app.post("/auth/register", response_model=UserPublic, status_code=201)
